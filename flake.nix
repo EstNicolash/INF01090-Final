@@ -40,7 +40,7 @@
               mkdir -p "$(dirname "$DATA_FILE")"
               curl -sSL "$DATASET_URL" -o "$DATA_FILE" || {
                 echo "[nix] Failed to download piracy_attacks.csv"
-                return 1
+                exit 1
               }
             fi
 
