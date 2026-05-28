@@ -38,10 +38,9 @@
 
             if [ ! -f "$DATA_FILE" ]; then
               mkdir -p "$(dirname "$DATA_FILE")"
-              curl -sSL "$DATASET_URL" -o "$DATA_FILE" || {
-                echo "[nix] Failed to download piracy_attacks.csv"
-                exit 1
-              }
+              if ! curl -sSL "$DATASET_URL" -o "$DATA_FILE"; then
+                echo "[nix] Warning: failed to download piracy_attacks.csv"
+              fi
             fi
 
             VENV_DIR="$(pwd)/.venv"
