@@ -10,8 +10,11 @@
     flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-darwin" ] (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        datasetUrl = "https://raw.githubusercontent.com/newzealandpaul/Maritime-Pirate-Attacks/master/data/pirate_attacks.csv";
-
+        
+        datasetUrl1 = "https://raw.githubusercontent.com/newzealandpaul/Maritime-Pirate-Attacks/master/data/csv/pirate_attacks.csv";
+        datasetUrl2 = "https://raw.githubusercontent.com/newzealandpaul/Maritime-Pirate-Attacks/master/data/csv/country_codes.csv";
+        datasetUrl3 = "https://raw.githubusercontent.com/newzealandpaul/Maritime-Pirate-Attacks/master/data/csv/country_indicators.csv";
+        
         python = pkgs.python314;
 
         nativeBuildDeps = with pkgs; [
@@ -34,13 +37,33 @@
           shellHook = ''
             export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:$LD_LIBRARY_PATH"
 
-            DATASET_URL="${datasetUrl}"
+            DATASET_URL="${datasetUrl1}"
             DATA_FILE="$(pwd)/data/raw/piracy_attacks.csv"
-
+            echo "[nix] Downloading data…"
             if [ ! -f "$DATA_FILE" ]; then
               mkdir -p "$(dirname "$DATA_FILE")"
               if ! curl -sSL "$DATASET_URL" -o "$DATA_FILE"; then
                 echo "[nix] Warning: failed to download piracy_attacks.csv (check network connectivity or dataset URL)"
+              fi
+            fi
+
+            DATASET_URL="${datasetUrl2}"
+            DATA_FILE="$(pwd)/data/raw/country_codes.csv"
+
+            if [ ! -f "$DATA_FILE" ]; then
+              mkdir -p "$(dirname "$DATA_FILE")"
+              if ! curl -sSL "$DATASET_URL" -o "$DATA_FILE"; then
+                echo "[nix] Warning: failed to download country_codes.csv (check network connectivity or dataset URL)"
+              fi
+            fi
+
+            DATASET_URL="${datasetUrl3}"
+            DATA_FILE="$(pwd)/data/raw/country_indicators.csv"
+
+            if [ ! -f "$DATA_FILE" ]; then
+              mkdir -p "$(dirname "$DATA_FILE")"
+              if ! curl -sSL "$DATASET_URL" -o "$DATA_FILE"; then
+                echo "[nix] Warning: failed to download country_indicators.csv(check network connectivity or dataset URL)"
               fi
             fi
 
