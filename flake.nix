@@ -25,12 +25,20 @@
           name = "maritime-piracy-ds";
 
           packages = [ python ] ++ nativeBuildDeps ++ (with pkgs; [
+            curl
             python.pkgs.pip
             python.pkgs.virtualenv
           ]);
 
           shellHook = ''
             export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:$LD_LIBRARY_PATH"
+
+            DATA_FILE="$(pwd)/data/raw/piracy_attacks.csv"
+
+            if [ ! -f "$DATA_FILE" ]; then
+              mkdir -p "$(dirname "$DATA_FILE")"
+              curl -sSL "https://raw.githubusercontent.com/newzealandpaul/Maritime-Pirate-Attacks/master/data/pirate_attacks.csv" -o "$DATA_FILE"
+            fi
 
             VENV_DIR="$(pwd)/.venv"
 
