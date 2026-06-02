@@ -6,3 +6,5 @@ lightgbm
 plotly
 folium
 ipykernel
+nbformat>=4.2.0
+ipywidgets
