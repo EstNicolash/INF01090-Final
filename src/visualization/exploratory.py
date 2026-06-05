@@ -235,3 +235,156 @@ def plot_operational_status_matrix(df: pd.DataFrame) -> px.imshow:
         template="plotly_white"
     )
     return fig
+
+
+def plot_target_distribution(df: pd.DataFrame) -> px.bar:
+    """
+    Generates a horizontal bar chart showing the absolute frequency 
+    and distribution of the multi-class target variable 'attack_type'.
+    """
+    # Contamos a frequência de cada classe, incluindo nulos se houver
+    target_counts = df['attack_type'].astype(str).value_counts().reset_index()
+    target_counts.columns = ['Attack Type', 'Incident Volume']
+    
+    fig = px.bar(
+        target_counts,
+        x="Incident Volume",
+        y="Attack Type",
+        orientation="h",
+        title="Global Target Distribution: Total Incidents per Attack Type",
+        labels={"Incident Volume": "Number of Recorded Attacks", "Attack Type": "Outcome (Target)"},
+        color="Incident Volume",
+        color_continuous_scale="Viridis",
+        template="plotly_white"
+    )
+    
+    # Mantém o gráfico ordenado do maior volume para o menor
+    fig.update_layout(yaxis={'categoryorder':'total ascending'}, coloraxis_showscale=False)
+    
+    return fig
+
+import pandas as pd
+import plotly.express as px
+
+def plot_vessel_status_by_target(df: pd.DataFrame) -> px.histogram:
+    """
+    Generates a grouped bar chart (histogram) evaluating the absolute distribution
+    of 'vessel_status' categories clustered by the multi-class target 'attack_type'.
+    Includes on-the-fly string standardization to merge casing mismatches.
+    """
+    df_viz = df.copy()
+    
+    # Drop records where core analytical variables are missing to preserve layout alignment
+    df_viz = df_viz.dropna(subset=['vessel_status', 'attack_type'])
+    
+    # Force strict title-case normalization to seamlessly merge blocks like 'steaming' vs 'Steaming'
+    df_viz['vessel_status'] = df_viz['vessel_status'].astype(str).str.strip().str.title()
+    
+    # Establish a reliable categorical order for the X-axis tracking
+    status_order = ['Anchored', 'Steaming', 'Berthed', 'Underway', 'Stationary', 'Unknown']
+    
+    fig = px.histogram(
+        df_viz,
+        x='vessel_status',
+        color='attack_type',
+        barmode='group',
+        title='Operational Vulnerability: Incident Volume by Vessel Status & Attack Type',
+        labels={'vessel_status': 'Vessel Operational Status', 'count': 'Incident Volume', 'attack_type': 'Outcome'},
+        category_orders={'vessel_status': status_order},
+        text_auto=True,
+        template="plotly_white"
+    )
+    
+    # Rotate ticks smoothly to prevent long text overlapping on smaller frames
+    fig.update_layout(
+        xaxis_tickangle=45,
+        legend_title_text='Attack Outcome',
+        margin=dict(l=40, r=40, t=60, b=80)
+    )
+    
+    return fig
+
+def plot_nlp_keyword_impact(df: pd.DataFrame, top_n: int = 15) -> px.bar:
+    """
+    Computes and visualizes the top tokens extracted from attack descriptions
+    to show what terms most frequently drive predictive signaling.
+    """
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    
+    df_nlp = df.dropna(subset=['attack_description', 'attack_type'])
+    
+    vectorizer = TfidfVectorizer(stop_words='english', max_features=top_n)
+    tfidf_matrix = vectorizer.fit_transform(df_nlp['attack_description'])
+    
+    # Sum values to find cumulative importance
+    importance = np.asarray(tfidf_matrix.sum(axis=0)).flatten()
+    vocabulary = vectorizer.get_feature_names_out()
+    
+    df_words = pd.DataFrame({'Keyword': vocabulary, 'TF-IDF Weight Sum': importance})
+    df_words = df_words.sort_values(by='TF-IDF Weight Sum', ascending=True)
+    
+    fig = px.bar(
+        df_words,
+        x='TF-IDF Weight Sum',
+        y='Keyword',
+        orientation='h',
+        title=f"NLP Feature Mining: Top {top_n} Informative Tokens in Attack Logs",
+        color='TF-IDF Weight Sum',
+        color_continuous_scale="Cividis",
+        template="plotly_white"
+    )
+    fig.update_layout(coloraxis_showscale=False)
+    return fig
+
+def plot_model_confusion_matrix(y_true, y_pred, class_names: list) -> px.imshow:
+    """
+    Generates a normalized confusion matrix plot using Plotly to evaluate 
+    misclassification patterns across the multi-class target outcomes.
+    """
+    from sklearn.metrics import confusion_matrix
+    
+    # Compute and normalize the matrix row-wise (Recall focus)
+    cm = confusion_matrix(y_true, y_pred)
+    cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100
+    
+    fig = px.imshow(
+        cm_normalized,
+        x=class_names,
+        y=class_names,
+        text_auto=".1f",
+        title="Model Error Diagnostic: Normalized Confusion Matrix (%)",
+        labels=dict(x="Predicted Outcome (Model)", y="True Outcome (Ground Truth)", color="Accuracy %"),
+        color_continuous_scale="Blues",
+        template="plotly_white"
+    )
+    return fig
+
+def plot_multiclass_roc_curves(y_test, y_proba, class_names: list) -> px.line:
+    """
+    Plots individual One-vs-Rest ROC curves for each class in a multi-class setup.
+    """
+    from sklearn.metrics import roc_curve, auc
+    from sklearn.preprocessing import label_binarize
+    
+    n_classes = len(class_names)
+    y_test_bin = label_binarize(y_test, classes=range(n_classes))
+    
+    roc_df = pd.DataFrame()
+    
+    for i in range(n_classes):
+        fpr, tpr, _ = roc_curve(y_test_bin[:, i], y_proba[:, i])
+        roc_auc = auc(fpr, tpr)
+        
+        df_class = pd.DataFrame({'FPR': fpr, 'TPR': tpr})
+        df_class['Class'] = f"{class_names[i]} (AUC = {roc_auc:.2f})"
+        roc_df = pd.concat([roc_df, df_class], axis=0)
+        
+    fig = px.line(
+        roc_df, x='FPR', y='TPR', color='Class',
+        title='Multi-class One-vs-Rest (OvR) ROC Curves Performance',
+        labels={'FPR': 'False Positive Rate (1 - Specificity)', 'TPR': 'True Positive Rate (Sensitivity)'},
+        template='plotly_white'
+    )
+    # Add baseline 50% diagonal line
+    fig.add_shape(type='line', line=dict(dash='dash', color='gray'), x0=0, x1=1, y0=0, y1=1)
+    return fig

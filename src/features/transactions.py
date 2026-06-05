@@ -92,6 +92,7 @@ def tx_nlp_vessel_mining(df: pd.DataFrame) -> pd.DataFrame:
     current_types.loc[is_unlabeled] = predictions
     
     # Re-align series memory into categorical schema blocks
+    df_out.loc[is_unlabeled, 'vessel_type'] = predictions
     df_out['vessel_type'] = current_types.astype('category')
     
     # Drop the temporary fused feature to keep the dataframe's structure clean (DOD)
@@ -155,32 +156,7 @@ def tx_handle_spatial_metadata(df: pd.DataFrame) -> pd.DataFrame:
         
     return df_out
 
-def tx_temporal_engineering(df: pd.DataFrame) -> pd.DataFrame:
-    """Extract chronological anchors and compute cyclic wave-encoded time components.
-    
-    Transforms standard text dates into linear years for validation gating,
-    and maps the day-of-year into sine/cosine dimensions to preserve seasonal
-    patterns (e.g., monsoon cycles) for tree splitting.
-    """
-    df_out = df.copy()
-    
-    # Force transformation to a unified datetime block
-    dates = pd.to_datetime(df_out['date'], errors='coerce')
-    
-    # 1. Structural Anchor (Mandatory for our TimeSeriesSplit tracking)
-    df_out['year'] = dates.dt.year.fillna(2000).astype(np.int16)
-    
-    # 2. Cyclic Sseasonality Transformation
-    # Day of year ranges from 1 to 365
-    day_of_year = dates.dt.dayofyear.fillna(1)
-    
-    df_out['feat_season_sine'] = np.sin(2 * np.pi * day_of_year / 365.25)
-    df_out['feat_season_cosine'] = np.cos(2 * np.pi * day_of_year / 365.25)
-    
-    # Drop the raw date string to prevent high-cardinality inflation
-    df_out = df_out.drop(columns=['date'])
-    
-    return df_out
+
 
 def tx_clean_vessels(df: pd.DataFrame) -> pd.DataFrame:
     """Standardise and clean vessel-related columns.
@@ -198,6 +174,39 @@ def tx_clean_vessels(df: pd.DataFrame) -> pd.DataFrame:
     if 'vessel_status' in df_out.columns:
         df_out['vessel_status'] = df_out['vessel_status'].astype(str).fillna('Unknown').astype('category')
         
+    if 'vessel_status' in df_out.columns:
+        # Normaliza capitalização antes de categorizar
+        df_out['vessel_status'] = (
+            df_out['vessel_status']
+            .astype(str)
+            .str.strip()
+            .str.title()          # 'steaming' → 'Steaming'
+            .replace('Nan', None) # evita 'Nan' como categoria
+            .astype('category')
+        )
+
+    if 'vessel_type' in df_out.columns:
+        # Normaliza case ANTES do NLP
+        df_out['vessel_type'] = (
+            df_out['vessel_type']
+            .astype(str).str.strip().str.title()
+            .replace({'Not Recorded': None, 'Nan': None})
+        )
+        
+        # Colapso semântico de variantes do mesmo tipo
+        vessel_mapping = {
+            'Bulk Carrier':                              'Bulk Carrier',
+            'Bulk Carrier':                              'Bulk Carrier',
+            'Container':                                 'Container Ship',
+            'Offshore Supply':                           'Offshore Supply Ship',
+            'Offshore Supply Ship':                      'Offshore Supply Ship',
+            'Offshore Supply Ship':                      'Offshore Supply Ship', 
+            'Crude Tanker':                              'Crude Oil Tanker',
+            'Floating Production Storage And Offloading':'FPSO',
+            'Floating Storage And Offloading':           'FPSO',
+        }
+        df_out['vessel_type'] = df_out['vessel_type'].replace(vessel_mapping)
+
     # Align target categories cleanly, dropping any dangling unknown target blocks
     if 'attack_type' in df_out.columns:
         df_out['attack_type'] = df_out['attack_type'].astype('category')
@@ -218,7 +227,11 @@ def tx_drop_redundant_features(df: pd.DataFrame) -> pd.DataFrame:
         'attack_description',
         'vessel_name',
         'shore_longitude',
-        'shore_latitude'
+        'shore_latitude',
+        'latitude',
+        'longitude',
+        #'lat_bin', 'lon_bin',
+        #'vessel_status',
         'eez_country' # 0.93 NMI contra nearest_country
     ]
     
@@ -226,4 +239,69 @@ def tx_drop_redundant_features(df: pd.DataFrame) -> pd.DataFrame:
     existing_drops = [col for col in features_to_drop if col in df_out.columns]
     df_out = df_out.drop(columns=existing_drops)
     
+    return df_out
+
+def tx_regional_interaction(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Cria uma feature de região combinada a partir dos bins espaciais.
+    Uma célula lat×lon captura padrões regionais que os bins isolados não capturam.
+    """
+    df_out = df.copy()
+    
+    if 'lat_bin' in df_out.columns and 'lon_bin' in df_out.columns:
+        df_out['region_cell'] = (
+            df_out['lat_bin'].astype(str) + '_' + df_out['lon_bin'].astype(str)
+        ).astype('category')
+      
+    
+    return df_out
+
+def tx_consolidate_attack_classes(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Agrupa classes de ataque raras em categorias semanticamente coerentes.
+    Reduz de 8 para 4 classes, eliminando bins com <2% de representação
+    que causam colapso de F1 Macro no TimeSeriesSplit.
+    """
+    df_out = df.copy()
+    
+    mapping = {
+        'Explosion':   'Fired Upon',   # ambos: ataque com arma
+        'Suspicious':  'Attempted',    # ambos: não consumado
+        'Detained':    'Boarded',      # boarding forçado pelo estado
+        'Boarding':    'Boarded',
+    }
+    
+    df_out['attack_type'] = (
+        df_out['attack_type']
+        .astype(str)
+        .replace(mapping)
+        .astype('category')
+    )
+    return df_out
+
+
+def tx_vessel_mobility(df: pd.DataFrame) -> pd.DataFrame:
+    df_out = df.copy()
+    
+    if 'vessel_status' in df_out.columns:
+        status = df_out['vessel_status'].astype(str).str.strip().str.title()
+        
+        def classify(s):
+            if s in {'Steaming', 'Underway', 'Drifting'}:
+                return 'Moving'
+            elif s in {'Anchored', 'Berthed', 'Moored', 'Stationary',
+                       'Bunkering Operations', 'Grounded', 'Fishing', 'Towed'}:
+                return 'Stationary'
+            else:
+                return 'Unknown'  # Nan, outros
+        
+        df_out['vessel_status'] = (
+            status.map(classify).astype('category')
+        )
+        
+        # Mantém também a binária como feature adicional
+        df_out['feat_vessel_moving'] = (
+            df_out['vessel_status'].eq('Moving').astype(np.int8)
+        )
+        
     return df_out

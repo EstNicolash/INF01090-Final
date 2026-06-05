@@ -8,3 +8,6 @@ folium
 ipykernel
 nbformat>=4.2.0
 ipywidgets
+optuna
+fastparquet 
+pyarrow
