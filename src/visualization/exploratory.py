@@ -236,6 +236,79 @@ def plot_operational_status_matrix(df: pd.DataFrame) -> px.imshow:
     )
     return fig
 
+import pandas as pd
+import numpy as np
+import plotly.express as px
+
+def plot_operational_mobility_matrix(df: pd.DataFrame) -> px.imshow:
+    """
+    Computes a cross-tabulation matrix normalized by row profile to output 
+    a tactical probability heatmap of vessel mobility vs. the 4 final attack outcomes.
+    """
+    df_viz = df.copy()
+    
+    # 1. Filtro estrito de nulos para garantir o alinhamento supervisionado
+    df_viz = df_viz.dropna(subset=['vessel_status', 'attack_type'])
+    
+    # 2. Engenharia de Recursos Inline: Colapso das 4 Classes Efetivas do Target
+    target_mapping = {
+        'Explosion':   'Fired Upon',
+        'Suspicious':  'Attempted',
+        'Detained':    'Boarded',
+        'Boarding':    'Boarded'
+    }
+    df_viz['attack_type'] = df_viz['attack_type'].replace(target_mapping)
+    
+    # Garante o descarte de qualquer string 'Unknown' ou 'Na' residual no target
+    allowed_targets = {'Boarded', 'Attempted', 'Hijacked', 'Fired Upon'}
+    df_viz = df_viz[df_viz['attack_type'].isin(allowed_targets)]
+    
+    # 3. Engenharia de Recursos Inline: Redução para as Categorias de Mobilidade
+    status_clean = df_viz['vessel_status'].astype(str).str.strip().str.title()
+    
+    def classify_mobility(s):
+        if s in {'Steaming', 'Underway', 'Drifting'}:
+            return 'Moving'
+        elif s in {'Anchored', 'Berthed', 'Moored', 'Stationary',
+                   'Bunkering Operations', 'Grounded', 'Fishing', 'Towed'}:
+            return 'Stationary'
+        else:
+            return 'Unknown'
+            
+    df_viz['vessel_mobility'] = status_clean.map(classify_mobility)
+    
+    # Remove a classe 'Unknown' da matriz para focar puramente no contraste tático real
+    df_viz = df_viz[df_viz['vessel_mobility'] != 'Unknown']
+    
+    # 4. Cálculo da Tabulação Cruzada Normalizada por Linha (Gera Probabilidade Condicional)
+    contingency_table = pd.crosstab(
+        df_viz['vessel_mobility'], 
+        df_viz['attack_type'], 
+        normalize='index'
+    ) * 100
+    
+    # Força uma ordenação lógica nas colunas do target (da menor severidade para a maior)
+    target_order = ['Attempted', 'Fired Upon', 'Boarded', 'Hijacked']
+    contingency_table = contingency_table.reindex(columns=target_order, fill_value=0.0)
+    
+    # 5. Construção da Matriz de Calor (Heatmap)
+    fig = px.imshow(
+        contingency_table,
+        text_auto=".1f", # Insere os valores percentuais dentro de cada célula
+        aspect="auto",
+        title="Tactical Probability Matrix: Vessel Mobility vs. Model Target Outcomes (%)",
+        labels=dict(x="Attack Outcome (Model Target)", y="Vessel Mobility State", color="Probability %"),
+        color_continuous_scale="Viridis",
+        template="plotly_white"
+    )
+    
+    fig.update_layout(
+        coloraxis_showscale=True,
+        margin=dict(l=40, r=40, t=60, b=40)
+    )
+    
+    return fig
+
 
 def plot_target_distribution(df: pd.DataFrame) -> px.bar:
     """
@@ -260,6 +333,56 @@ def plot_target_distribution(df: pd.DataFrame) -> px.bar:
     
     # Mantém o gráfico ordenado do maior volume para o menor
     fig.update_layout(yaxis={'categoryorder':'total ascending'}, coloraxis_showscale=False)
+    
+    return fig
+
+import pandas as pd
+import plotly.express as px
+
+def plot_target_distribution_pie(df: pd.DataFrame) -> px.pie:
+    """
+    Generates a Pie Chart showing the relative frequency (%) and distribution 
+    of the multi-class target 'attack_type' after collapsing redundant classes.
+    """
+    df_viz = df.copy()
+    
+    # Dicionário de mapeamento para consolidar e limpar o espaço de estados
+    mapping = {
+        'Explosion':   'Fired Upon',   # Ambos envolvem ataque armado agressivo
+        'Suspicious':  'Attempted',    # Ambos são eventos não consumados
+        'Detained':    'Boarded',      # Abordagem/retenção forçada
+        'Boarding':    'Boarded'       # Padronização léxica
+    }
+    
+    # Padroniza nulos e aplica o mapeamento de consolidação
+    df_viz['attack_type'] = df_viz['attack_type'].astype(str).fillna('Unknown')
+    df_viz['attack_type'] = df_viz['attack_type'].replace(mapping)
+    
+    # Calcula as frequências absolutas para alimentar o gráfico
+    target_counts = df_viz['attack_type'].value_counts().reset_index()
+    target_counts.columns = ['Attack Type', 'Incident Volume']
+    
+    # Cria o gráfico de pizza focado em frequência relativa (%)
+    fig = px.pie(
+        target_counts,
+        values='Incident Volume',
+        names='Attack Type',
+        title='Consolidated Target Variable Distribution (Relative Frequency %)',
+        color_discrete_sequence=px.colors.sequential.Viridis,
+        template='plotly_white'
+    )
+    
+    # Ajustes estéticos para exibir a porcentagem e o valor bruto ao passar o mouse
+    fig.update_traces(
+        textposition='inside', 
+        textinfo='percent+label',
+        hovertemplate="<b>%{label}</b><br>Volume Absoluto: %{value}<br>Percentual: %{percent}"
+    )
+    
+    fig.update_layout(
+        margin=dict(l=20, r=20, t=50, b=20),
+        legend_title_text='Outcome (Target)'
+    )
     
     return fig
 
@@ -298,6 +421,66 @@ def plot_vessel_status_by_target(df: pd.DataFrame) -> px.histogram:
     # Rotate ticks smoothly to prevent long text overlapping on smaller frames
     fig.update_layout(
         xaxis_tickangle=45,
+        legend_title_text='Attack Outcome',
+        margin=dict(l=40, r=40, t=60, b=80)
+    )
+    
+    return fig
+
+import pandas as pd
+import numpy as np
+import plotly.express as px
+
+def plot_vessel_mobility_by_target(df: pd.DataFrame) -> px.histogram:
+    """
+    Generates a grouped bar chart evaluating how vessel mobility 
+    (Moving vs. Stationary) impacts the tactical attack outcome.
+    """
+    df_viz = df.copy()
+    
+    # 1. Drop de nulos apenas no target para preservar a análise
+    df_viz = df_viz.dropna(subset=['attack_type'])
+    
+    # 2. Aplicação da transformação de mobilidade inline para a visualização
+    if 'vessel_status' in df_viz.columns:
+        status = df_viz['vessel_status'].astype(str).str.strip().str.title()
+        
+        def classify(s):
+            if s in {'Steaming', 'Underway', 'Drifting'}:
+                return 'Moving'
+            elif s in {'Anchored', 'Berthed', 'Moored', 'Stationary',
+                       'Bunkering Operations', 'Grounded', 'Fishing', 'Towed'}:
+                return 'Stationary'
+            else:
+                return 'Unknown'
+        
+        df_viz['vessel_mobility'] = status.map(classify)
+    else:
+        df_viz['vessel_mobility'] = 'Unknown'
+
+    # Ordem fixa para as novas categorias no eixo X
+    mobility_order = ['Stationary', 'Moving', 'Unknown']
+    
+    # 3. Construção do Histograma Agrupado
+    fig = px.histogram(
+        df_viz,
+        x='vessel_mobility',
+        color='attack_type',
+        barmode='group',
+        title='Operational Vulnerability: Incident Volume by Vessel Mobility & Attack Type',
+        labels={
+            'vessel_mobility': 'Vessel Mobility State', 
+            'count': 'Incident Volume', 
+            'attack_type': 'Outcome'
+        },
+        category_orders={'vessel_mobility': mobility_order},
+        text_auto=True,
+        template="plotly_white"
+    )
+    
+    fig.update_layout(
+        xaxis_title='Vessel Mobility (Combined)',
+        yaxis_title='Number of Recorded Attacks',
         legend_title_text='Attack Outcome',
         margin=dict(l=40, r=40, t=60, b=80)
     )

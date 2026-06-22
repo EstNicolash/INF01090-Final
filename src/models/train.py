@@ -10,17 +10,53 @@ from lightgbm import LGBMClassifier
 from src.models.pipelines import build_preprocessing_pipeline
 
 def instantiate_models(num_classes: int) -> dict:
-    """Instantiates the multi-model benchmarking dictionary with explicit objectives."""
+    """Instantiates the multi-model benchmarking dictionary with optimized hyperparameters."""
+    
+    best_params_lightgbm = {
+        'n_estimators': 200, 
+        'max_depth': 5, 
+        'learning_rate': 0.08788968118555761, 
+        'num_leaves': 67, 
+        'min_child_samples': 29, 
+        'subsample': 0.8358149799574793,
+        'class_weight': 'balanced',
+        'random_state': 42,
+        'verbose': -1
+    }
+
+    best_params_xgboost = {
+        'n_estimators': 300, 
+        'max_depth': 4, 
+        'learning_rate': 0.18258230439200238, 
+        'subsample': 0.9100531293444458, 
+        'colsample_bytree': 0.9757995766256756, 
+        'min_child_weight': 9,
+        'objective': 'multi:softprob',
+        'eval_metric': 'mlogloss',
+        'random_state': 42
+    }
+
+    best_params_random_forest = {
+        'n_estimators': 350, 
+        'max_depth': 15, 
+        'min_samples_split': 3, 
+        'min_samples_leaf': 2, 
+        'criterion': 'entropy',
+        'class_weight': 'balanced',
+        'random_state': 42,
+        'n_jobs': -1
+    }
+
     return {
-        "Random_Forest": RandomForestClassifier(n_estimators=200, max_depth=8, class_weight='balanced', random_state=42),
-        "XGBoost": XGBClassifier(n_estimators=200, max_depth=5, objective="multi:softprob", eval_metric='mlogloss', random_state=42),
-        "LightGBM": LGBMClassifier(n_estimators=200, max_depth=5, class_weight='balanced', random_state=42, verbose=-1),
+        "Random_Forest": RandomForestClassifier(**best_params_random_forest),
+        "XGBoost": XGBClassifier(**best_params_xgboost),
+        "LightGBM": LGBMClassifier(**best_params_lightgbm),
         "Neural_Network": MLPClassifier(hidden_layer_sizes=(64, 32), max_iter=500, activation='relu', random_state=42)
     }
 
 def run_temporal_benchmark(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Orchestrates sequential training and evaluation using a TimeSeriesSplit loop.
+    Orchestrates sequential training and evaluation using a TimeSeriesSplit loop.0
     Ensures zero state leakage between historical folds and safe multi-class metrics.
     """
     df_sorted = df.sort_values('year').reset_index(drop=True)

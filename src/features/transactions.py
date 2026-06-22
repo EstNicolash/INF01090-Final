@@ -213,6 +213,22 @@ def tx_clean_vessels(df: pd.DataFrame) -> pd.DataFrame:
         
     return df_out
 
+def tx_discretize_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
+    df_out = df.copy()
+    
+    if 'date' in df_out.columns:
+   
+        date_dt = pd.to_datetime(df_out['date'], errors='coerce')
+        
+      
+        df_out['feat_attack_month'] = date_dt.dt.month.fillna(-1).astype(np.int8)
+        df_out['feat_attack_day'] = date_dt.dt.day.fillna(-1).astype(np.int8)
+        
+       
+        df_out = df_out.drop(columns=['date'])
+        
+    return df_out
+
 def tx_drop_redundant_features(df: pd.DataFrame) -> pd.DataFrame:
     """Drop raw text blocks, unencoded strings, and collinear spatial metadata.
     
@@ -230,6 +246,7 @@ def tx_drop_redundant_features(df: pd.DataFrame) -> pd.DataFrame:
         'shore_latitude',
         'latitude',
         'longitude',
+        'time',
         #'lat_bin', 'lon_bin',
         #'vessel_status',
         'eez_country' # 0.93 NMI contra nearest_country
@@ -305,3 +322,4 @@ def tx_vessel_mobility(df: pd.DataFrame) -> pd.DataFrame:
         )
         
     return df_out
+

@@ -8,8 +8,9 @@ def build_preprocessing_pipeline() -> ColumnTransformer:
 
     numerical_features = [
         'shore_distance_log',
-        #'feat_season_sine', 'feat_season_cosine',
-        'year'
+        'year',
+        'feat_attack_month', 
+        'feat_attack_day'     
     ]
 
     # Apenas colunas de baixa cardinalidade aqui
@@ -24,7 +25,6 @@ def build_preprocessing_pipeline() -> ColumnTransformer:
     passthrough_features = [
         'is_international_waters',
         'feat_is_near_port',
-        'feat_time_recorded',
         'feat_vessel_moving',
     ]
 
